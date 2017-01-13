@@ -124,7 +124,7 @@ class CommandDispatcher {
 								message.guild ? undefined : null,
 								message.guild ? undefined : null
 							)} to view the list of all commands.`
-						);
+						).then(a=>a.delete(8000));
 					}
 				}
 			} else {

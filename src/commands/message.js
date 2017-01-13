@@ -159,7 +159,7 @@ class CommandMessage {
 		}
 		if(!this.command.hasPermission(this)) {
 			this.client.emit('commandBlocked', this, 'permission');
-			return await this.reply(`You do not have permission to use the \`${this.command.name}\` command.`);
+			return await this.reply(`You do not have permission to use the \`${this.command.name}\` command.`).then(a=>a.delete(8000));
 		}
 
 		// Throttle the command
@@ -170,7 +170,7 @@ class CommandMessage {
 				const remaining = (throttle.start + (this.command.throttling.duration * 1000) - Date.now()) / 1000;
 				return await this.reply(
 					`You may not use the \`${this.command.name}\` command again for another ${remaining.toFixed(1)} seconds.`
-				);
+				).then(a=>a.delete(8000));
 			}
 		}
 
