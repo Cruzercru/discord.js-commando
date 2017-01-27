@@ -80,6 +80,8 @@ module.exports = class HelpCommand extends Command {
 
 					Use ${this.usage('<command>', null, null)} to view detailed information about a specific command.
 					Use ${this.usage('all', null, null)} to view a list of *all* commands, not just available ones.
+					
+					More detailed information including examples can be found at: https://backpackbot.com/
 
 					__**${showAll ? 'All commands' : `Available commands in ${msg.guild || 'this DM'}`}**__
 
@@ -91,7 +93,8 @@ module.exports = class HelpCommand extends Command {
 							}
 						`).join('\n\n')
 					}
-				`, { split: true }));
+					
+				More detailed information including examples can be found at: https://backpackbot.com/`, { split: true }));
 				if(msg.channel.type !== 'dm') messages.push(await msg.reply('Sent you a DM with information.'));
 			} catch(err) {
 				messages.push(await msg.reply('Unable to send you the help DM. You probably have DMs disabled.'));
