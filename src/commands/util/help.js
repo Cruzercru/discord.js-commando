@@ -13,7 +13,7 @@ module.exports = class HelpCommand extends Command {
 	}
 
 	async run(msg) {
-		msg.author.sendMessage(`Documentation on all commands can be found here: https://backpackbot.com/`)
+		msg.author.sendMessage(`Documentation on all commands can be found here: https://backpackbot.com/#commands`)
 			.then(a=> msg.reply(`Sent you a DM with information.`).then(a=>a.delete(8000)))
 	}
 };
