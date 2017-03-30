@@ -4,3 +4,4 @@ npm-debug.log
 test/auth.json
 test/database.sqlite3
 docs/docs.json
+.vscode

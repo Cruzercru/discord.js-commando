@@ -56,13 +56,6 @@ class CommandMessage {
 		 * @type {?Object}
 		 */
 		this.responsePositions = null;
-
-		/**
-		 * Number of times the user has been prompted while the arguments are being obtained
-		 * @type {number}
-		 * @private
-		 */
-		this.promptCount = 0;
 	}
 
 	/**
@@ -105,34 +98,14 @@ class CommandMessage {
 	parseArgs() {
 		switch(this.command.argsType) {
 			case 'single':
-				return this.argString.trim().replace(this.argsSingleQuotes ? /^("|')([^]*)\1$/g : /^(")([^]*)"$/g, '$2');
+				return this.argString.trim().replace(
+					this.command.argsSingleQuotes ? /^("|')([^]*)\1$/g : /^(")([^]*)"$/g, '$2'
+				);
 			case 'multiple':
-				return this.constructor.parseArgs(this.argString, this.argsCount, this.argsSingleQuotes);
+				return this.constructor.parseArgs(this.argString, this.argsCount, this.command.argsSingleQuotes);
 			default:
 				throw new RangeError(`Unknown argsType "${this.argsType}".`);
 		}
-	}
-
-	/**
-	 * Obtains the values for the command's arguments
-	 * @return {Array<*>|symbol}
-	 */
-	async obtainArgs() {
-		this.client.dispatcher._awaiting.add(this.message.author.id + this.message.channel.id);
-		const args = this.command.args;
-		const count = args[args.length - 1].infinite ? Infinity : args.length;
-		const provided = this.constructor.parseArgs(this.argString.trim(), count, this.argsSingleQuotes);
-		const values = {};
-		for(let i = 0; i < args.length; i++) {
-			const value = await args[i].obtain(this, args[i].infinite ? provided.slice(i) : provided[i]);
-			if(value === null || typeof value === 'symbol') {
-				this.client.dispatcher._awaiting.delete(this.message.author.id + this.message.channel.id);
-				return this.promptCount > 0 ? value : this.constructor.FORMAT_CANCEL;
-			}
-			values[args[i].key] = value;
-		}
-		this.client.dispatcher._awaiting.delete(this.message.author.id + this.message.channel.id);
-		return values;
 	}
 
 	/**
@@ -153,12 +126,14 @@ class CommandMessage {
 			 * @event CommandoClient#commandBlocked
 			 * @param {CommandMessage} message - Command message that the command is running from
 			 * @param {string} reason - Reason that the command was blocked
+			 * (built-in reasons are `guildOnly`, `permission`, and `throttling`)
 			 */
 			this.client.emit('commandBlocked', this, 'guildOnly');
-			return await this.reply(`The \`${this.command.name}\` command must be used in a server channel.`);
+			return this.reply(`The \`${this.command.name}\` command must be used in a server channel.`);
 		}
 		if(!this.command.hasPermission(this)) {
 			this.client.emit('commandBlocked', this, 'permission');
+<<<<<<< HEAD
 			return await this.reply(`You do not have permission to use the \`${this.command.name}\` command.`).then(a=>a.delete(8000));
 		}
 
@@ -172,24 +147,43 @@ class CommandMessage {
 					`You may not use the \`${this.command.name}\` command again for another ${remaining.toFixed(1)} seconds.`
 				).then(a=>a.delete(8000));
 			}
+=======
+			return this.reply(`You do not have permission to use the \`${this.command.name}\` command.`);
+		}
+
+		// Throttle the command
+		const throttle = this.command.throttle(this.message.author.id);
+		if(throttle && throttle.usages + 1 > this.command.throttling.usages) {
+			const remaining = (throttle.start + (this.command.throttling.duration * 1000) - Date.now()) / 1000;
+			this.client.emit('commandBlocked', this, 'throttling');
+			return this.reply(
+				`You may not use the \`${this.command.name}\` command again for another ${remaining.toFixed(1)} seconds.`
+			);
+>>>>>>> refs/remotes/Gawdl3y/master
 		}
 
 		// Figure out the command arguments
 		let args = this.patternMatches;
-		if(!args && this.command.args) {
-			args = await this.obtainArgs();
-			if(throttle && (!args || typeof args === 'symbol')) throttle.usages--;
-			if(!args) return await this.reply('Cancelled command.');
-			if(args === this.constructor.SILENT_CANCEL) return null;
-			if(args === this.constructor.FORMAT_CANCEL) {
-				const err = new CommandFormatError(this);
-				return await this.reply(err.message);
+		if(!args && this.command.argsCollector) {
+			const collArgs = this.command.argsCollector.args;
+			const count = collArgs[collArgs.length - 1].infinite ? Infinity : collArgs.length;
+			const provided = this.constructor.parseArgs(this.argString.trim(), count, this.command.argsSingleQuotes);
+
+			const result = await this.command.argsCollector.obtain(this, provided);
+			if(result.cancelled) {
+				if(result.prompts.length === 0) {
+					const err = new CommandFormatError(this);
+					return this.reply(err.message);
+				}
+				return this.reply('Cancelled command.');
 			}
+			args = result.values;
 		}
 		if(!args) args = this.parseArgs();
 		const fromPattern = Boolean(this.patternMatches);
 
 		// Run the command
+		if(throttle) throttle.usages++;
 		const typingCount = this.message.channel.typingCount;
 		try {
 			this.client.emit('debug', `Running command ${this.command.groupID}:${this.command.memberName}.`);
@@ -218,6 +212,7 @@ class CommandMessage {
 			 * Emitted when a command produces an error while running
 			 * @event CommandoClient#commandError
 			 * @param {Command} command - Command that produced an error
+			 * @param {Error} err - Error that was thrown
 			 * @param {CommandMessage} message - Command message that the command is running from (see {@link Command#run})
 			 * @param {Object|string|string[]} args - Arguments for the command (see {@link Command#run})
 			 * @param {boolean} fromPattern - Whether the args are pattern matches (see {@link Command#run})
@@ -225,46 +220,27 @@ class CommandMessage {
 			this.client.emit('commandError', this.command, err, this, args, fromPattern);
 			if(this.message.channel.typingCount > typingCount) this.message.channel.stopTyping();
 			if(err instanceof FriendlyError) {
-				return await this.reply(err.message);
+				return this.reply(err.message);
 			} else {
-				const owner = this.client.options.owner ? this.client.users.get(this.client.options.owner) : null;
-				const ownerName = owner ? `${discord.escapeMarkdown(owner.username)}#${owner.discriminator}` : 'the bot owner';
+				const owners = this.client.owners;
+				let ownerList = owners.map((usr, i) => {
+					const or = i === owners.length - 1 && owners.length > 1 ? 'or ' : '';
+					return `${or}${discord.escapeMarkdown(usr.username)}#${usr.discriminator}`;
+				}).join(owners.length > 2 ? ', ' : ' ');
+
 				const invite = this.client.options.invite;
-				return await this.reply(stripIndents`
+				return this.reply(stripIndents`
 					An error occurred while running the command: \`${err.name}: ${err.message}\`
 					You shouldn't ever receive an error like this.
-					Please contact ${ownerName}${invite ? ` in this server: ${invite}` : '.'}
+					Please contact ${ownerList}${invite ? ` in this server: ${invite}` : '.'}
 				`);
 			}
 		}
 	}
 
 	/**
-	 * Creates/obtains the throttle object for the command + user, if necessary (the owner is excluded)
-	 * @return {?Object}
-	 * @private
-	 */
-	throttleCommand() {
-		if(!this.command.throttling) return null;
-		const id = this.message.author.id;
-		if(id === this.client.options.owner) return null;
-		let throttle = this.command._throttles.get(id);
-		if(!throttle) {
-			throttle = {
-				start: Date.now(),
-				usages: 0,
-				timeout: this.client.setTimeout(() => {
-					this.command._throttles.delete(id);
-				}, this.command.throttling.duration * 1000)
-			};
-			this.command._throttles.set(id, throttle);
-		}
-		return throttle;
-	}
-
-	/**
 	 * Responds to the command message
-	 * @param {Object} options - Options for the response
+	 * @param {Object} [options] - Options for the response
 	 * @return {Message|Message[]}
 	 * @private
 	 */
@@ -310,7 +286,7 @@ class CommandMessage {
 	/**
 	 * Edits a response to the command message
 	 * @param {Message|Message[]} response - The response message(s) to edit
-	 * @param {Object} options - Options for the response
+	 * @param {Object} [options] - Options for the response
 	 * @return {Promise<Message|Message[]>}
 	 * @private
 	 */
@@ -348,7 +324,7 @@ class CommandMessage {
 	/**
 	 * Edits the current response
 	 * @param {string} id - The ID of the channel the response is in ("DM" for direct messages)
-	 * @param {Object} options - Options for the response
+	 * @param {Object} [options] - Options for the response
 	 * @return {Promise<Message|Message[]>}
 	 * @private
 	 */
@@ -362,7 +338,7 @@ class CommandMessage {
 	/**
 	 * Responds with a plain message
 	 * @param {StringResolvable} content - Content for the message
-	 * @param {MessageOptions} options - Options for the message
+	 * @param {MessageOptions} [options] - Options for the message
 	 * @return {Promise<Message|Message[]>}
 	 */
 	say(content, options) {
@@ -372,7 +348,7 @@ class CommandMessage {
 	/**
 	 * Responds with a reply message
 	 * @param {StringResolvable} content - Content for the message
-	 * @param {MessageOptions} options - Options for the message
+	 * @param {MessageOptions} [options] - Options for the message
 	 * @return {Promise<Message|Message[]>}
 	 */
 	reply(content, options) {
@@ -382,7 +358,7 @@ class CommandMessage {
 	/**
 	 * Responds with a direct message
 	 * @param {StringResolvable} content - Content for the message
-	 * @param {MessageOptions} options - Options for the message
+	 * @param {MessageOptions} [options] - Options for the message
 	 * @return {Promise<Message|Message[]>}
 	 */
 	direct(content, options) {
@@ -393,7 +369,7 @@ class CommandMessage {
 	 * Responds with a code message
 	 * @param {string} lang - Language for the code block
 	 * @param {StringResolvable} content - Content for the message
-	 * @param {MessageOptions} options - Options for the message
+	 * @param {MessageOptions} [options] - Options for the message
 	 * @return {Promise<Message|Message[]>}
 	 */
 	code(lang, content, options) {
@@ -435,7 +411,6 @@ class CommandMessage {
 		if(this.responses) this.deleteRemainingResponses();
 		this.responses = {};
 		this.responsePositions = {};
-		this.promptCount = 0;
 
 		if(responses instanceof Array) {
 			for(const response of responses) {
@@ -484,11 +459,11 @@ class CommandMessage {
 		const re = allowSingleQuote ? /\s*(?:("|')([^]*?)\1|(\S+))\s*/g : /\s*(?:(")([^]*?)"|(\S+))\s*/g;
 		const result = [];
 		let match = [];
-		// default: large enough to get all items
+		// Large enough to get all items
 		argCount = argCount || argString.length;
-		// get match and push the capture group that is not null to the result
+		// Get match and push the capture group that is not null to the result
 		while(--argCount && (match = re.exec(argString))) result.push(match[2] || match[3]);
-		// if text remains, push it to the array as it is, except for wrapping quotes, which are removed from it
+		// If text remains, push it to the array as-is (except for wrapping quotes, which are removed)
 		if(match && re.lastIndex < argString.length) {
 			const re2 = allowSingleQuote ? /^("|')([^]*)\1$/g : /^(")([^]*)"$/g;
 			result.push(argString.substr(re.lastIndex).replace(re2, '$2'));
@@ -507,6 +482,7 @@ class CommandMessage {
 	 * Shortcut to `this.message.id`
 	 * @type {string}
 	 * @see {@link Message#id}
+	 * @readonly
 	 */
 	get id() {
 		return this.message.id;
@@ -516,6 +492,7 @@ class CommandMessage {
 	 * Shortcut to `this.message.content`
 	 * @type {string}
 	 * @see {@link Message#content}
+	 * @readonly
 	 */
 	get content() {
 		return this.message.content;
@@ -525,6 +502,7 @@ class CommandMessage {
 	 * Shortcut to `this.message.author`
 	 * @type {User}
 	 * @see {@link Message#author}
+	 * @readonly
 	 */
 	get author() {
 		return this.message.author;
@@ -532,8 +510,9 @@ class CommandMessage {
 
 	/**
 	 * Shortcut to `this.message.channel`
-	 * @type {Channel}
+	 * @type {TextChannel|DMChannel|GroupDMChannel}
 	 * @see {@link Message#channel}
+	 * @readonly
 	 */
 	get channel() {
 		return this.message.channel;
@@ -543,6 +522,7 @@ class CommandMessage {
 	 * Shortcut to `this.message.guild`
 	 * @type {?Guild}
 	 * @see {@link Message#guild}
+	 * @readonly
 	 */
 	get guild() {
 		return this.message.guild;
@@ -552,6 +532,7 @@ class CommandMessage {
 	 * Shortcut to `this.message.member`
 	 * @type {?GuildMember}
 	 * @see {@link Message#member}
+	 * @readonly
 	 */
 	get member() {
 		return this.message.member;
@@ -561,6 +542,7 @@ class CommandMessage {
 	 * Shortcut to `this.message.pinned`
 	 * @type {boolean}
 	 * @see {@link Message#pinned}
+	 * @readonly
 	 */
 	get pinned() {
 		return this.message.pinned;
@@ -570,6 +552,7 @@ class CommandMessage {
 	 * Shortcut to `this.message.tts`
 	 * @type {boolean}
 	 * @see {@link Message#tts}
+	 * @readonly
 	 */
 	get tts() {
 		return this.message.tts;
@@ -579,6 +562,7 @@ class CommandMessage {
 	 * Shortcut to `this.message.nonce`
 	 * @type {string}
 	 * @see {@link Message#nonce}
+	 * @readonly
 	 */
 	get nonce() {
 		return this.message.nonce;
@@ -588,6 +572,7 @@ class CommandMessage {
 	 * Shortcut to `this.message.system`
 	 * @type {boolean}
 	 * @see {@link Message#system}
+	 * @readonly
 	 */
 	get system() {
 		return this.message.system;
@@ -597,6 +582,7 @@ class CommandMessage {
 	 * Shortcut to `this.message.embeds`
 	 * @type {MessageEmbed[]}
 	 * @see {@link Message#embeds}
+	 * @readonly
 	 */
 	get embeds() {
 		return this.message.embeds;
@@ -606,6 +592,7 @@ class CommandMessage {
 	 * Shortcut to `this.message.attachments`
 	 * @type {Collection<string, MessageAttachment>}
 	 * @see {@link Message#attachments}
+	 * @readonly
 	 */
 	get attachments() {
 		return this.message.attachments;
@@ -615,6 +602,7 @@ class CommandMessage {
 	 * Shortcut to `this.message.reactions`
 	 * @type {Collection<string, MessageReaction>}
 	 * @see {@link Message#reactions}
+	 * @readonly
 	 */
 	get reactions() {
 		return this.message.reactions;
@@ -624,6 +612,7 @@ class CommandMessage {
 	 * Shortcut to `this.message.createdTimestamp`
 	 * @type {number}
 	 * @see {@link Message#createdTimestamp}
+	 * @readonly
 	 */
 	get createdTimestamp() {
 		return this.message.createdTimestamp;
@@ -633,6 +622,7 @@ class CommandMessage {
 	 * Shortcut to `this.message.createdAt`
 	 * @type {Date}
 	 * @see {@link Message#createdAt}
+	 * @readonly
 	 */
 	get createdAt() {
 		return this.message.createdAt;
@@ -642,6 +632,7 @@ class CommandMessage {
 	 * Shortcut to `this.message.editedTimestamp`
 	 * @type {number}
 	 * @see {@link Message#editedTimestamp}
+	 * @readonly
 	 */
 	get editedTimestamp() {
 		return this.message.editedTimestamp;
@@ -651,6 +642,7 @@ class CommandMessage {
 	 * Shortcut to `this.message.editedAt`
 	 * @type {Date}
 	 * @see {@link Message#editedAt}
+	 * @readonly
 	 */
 	get editedAt() {
 		return this.message.editedAt;
@@ -660,6 +652,7 @@ class CommandMessage {
 	 * Shortcut to `this.message.mentions`
 	 * @type {Object}
 	 * @see {@link Message#mentions}
+	 * @readonly
 	 */
 	get mentions() {
 		return this.message.mentions;
@@ -669,6 +662,7 @@ class CommandMessage {
 	 * Shortcut to `this.message.webhookID`
 	 * @type {?string}
 	 * @see {@link Message#webhookID}
+	 * @readonly
 	 */
 	get webhookID() {
 		return this.message.webhookID;
@@ -678,6 +672,7 @@ class CommandMessage {
 	 * Shortcut to `this.message.cleanContent`
 	 * @type {string}
 	 * @see {@link Message#cleanContent}
+	 * @readonly
 	 */
 	get cleanContent() {
 		return this.message.cleanContent;
@@ -687,6 +682,7 @@ class CommandMessage {
 	 * Shortcut to `this.message.edits`
 	 * @type {Message[]}
 	 * @see {@link Message#edits}
+	 * @readonly
 	 */
 	get edits() {
 		return this.message.edits;
@@ -696,6 +692,7 @@ class CommandMessage {
 	 * Shortcut to `this.message.editable`
 	 * @type {boolean}
 	 * @see {@link Message#editable}
+	 * @readonly
 	 */
 	get editable() {
 		return this.message.editable;
@@ -705,6 +702,7 @@ class CommandMessage {
 	 * Shortcut to `this.message.deletable`
 	 * @type {boolean}
 	 * @see {@link Message#deletable}
+	 * @readonly
 	 */
 	get deletable() {
 		return this.message.deletable;
@@ -714,6 +712,7 @@ class CommandMessage {
 	 * Shortcut to `this.message.pinnable`
 	 * @type {boolean}
 	 * @see {@link Message#pinnable}
+	 * @readonly
 	 */
 	get pinnable() {
 		return this.message.pinnable;
@@ -724,6 +723,7 @@ class CommandMessage {
 	 * @param {GuildChannel|User|Role|string} data - A guild channel, user, or a role, or the ID of any of these
 	 * @return {boolean}
 	 * @see {@link Message#isMentioned}
+	 * @readonly
 	 */
 	isMentioned(data) {
 		return this.message.isMentioned(data);
@@ -734,6 +734,7 @@ class CommandMessage {
 	 * @param {GuildMember|User} member - Member/user to check for a mention of
 	 * @return {boolean}
 	 * @see {@link Message#isMemberMentioned}
+	 * @readonly
 	 */
 	isMemberMentioned(member) {
 		return this.message.isMemberMentioned(member);
@@ -744,6 +745,7 @@ class CommandMessage {
 	 * @param {StringResolvable} content - New content for the message
 	 * @returns {Promise<Message>}
 	 * @see {@link Message#edit}
+	 * @readonly
 	 */
 	edit(content) {
 		return this.message.edit(content);
@@ -755,6 +757,7 @@ class CommandMessage {
 	 * @param {StringResolvable} content - New content for the message
 	 * @returns {Promise<Message>}
 	 * @see {@link Message#editCode}
+	 * @readonly
 	 */
 	editCode(lang, content) {
 		return this.message.editCode(lang, content);
@@ -765,6 +768,7 @@ class CommandMessage {
 	 * @param {string|Emoji|ReactionEmoji} emoji - Emoji to react with
 	 * @returns {Promise<MessageReaction>}
 	 * @see {@link Message#react}
+	 * @readonly
 	 */
 	react(emoji) {
 		return this.message.react(emoji);
@@ -774,6 +778,7 @@ class CommandMessage {
 	 * Shortcut to `this.message.clearReactions()`
 	 * @returns {Promise<Message>}
 	 * @see {@link Message#clearReactions}
+	 * @readonly
 	 */
 	clearReactions() {
 		return this.message.clearReactions();
@@ -783,6 +788,7 @@ class CommandMessage {
 	 * Shortcut to `this.message.pin()`
 	 * @returns {Promise<Message>}
 	 * @see {@link Message#pin}
+	 * @readonly
 	 */
 	pin() {
 		return this.message.pin();
@@ -792,6 +798,7 @@ class CommandMessage {
 	 * Shortcut to `this.message.unpin()`
 	 * @returns {Promise<Message>}
 	 * @see {@link Message#unpin}
+	 * @readonly
 	 */
 	unpin() {
 		return this.message.unpin();
@@ -802,6 +809,7 @@ class CommandMessage {
 	 * @param {number} [timeout=0] - How long to wait to delete the message in milliseconds
 	 * @returns {Promise<Message>}
 	 * @see {@link Message#delete}
+	 * @readonly
 	 */
 	delete(timeout) {
 		return this.message.delete(timeout);
@@ -811,23 +819,12 @@ class CommandMessage {
 	 * Shortcut to `this.message.fetchWebhook()`
 	 * @returns {Promise<?Webhook>}
 	 * @see {@link Message#fetchWebhook}
+	 * @readonly
 	 */
 	fetchWebhook() {
 		return this.message.fetchWebhook();
 	}
 }
-
-/**
- * Silently cancels a running command
- * @type {symbol}
- */
-CommandMessage.SILENT_CANCEL = Symbol('silent command cancel');
-
-/**
- * Cancels a running command with a format error
- * @type {symbol}
- */
-CommandMessage.FORMAT_CANCEL = Symbol('format command cancel');
 
 function channelIDOrDM(channel) {
 	if(channel.type !== 'dm') return channel.id;

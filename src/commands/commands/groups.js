@@ -15,11 +15,11 @@ module.exports = class ListGroupsCommand extends Command {
 	}
 
 	hasPermission(msg) {
-		if(!msg.guild) return msg.author.id === this.client.options.owner;
+		if(!msg.guild) return this.client.isOwner(msg.author);
 		return msg.member.hasPermission('ADMINISTRATOR');
 	}
 
-	async run(msg) {
+	run(msg) {
 		return msg.reply(stripIndents`
 			__**Groups**__
 			${this.client.registry.groups.map(grp =>

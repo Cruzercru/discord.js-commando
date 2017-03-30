@@ -12,9 +12,9 @@ module.exports = class UnloadCommandCommand extends Command {
 			description: 'Unloads a command.',
 			details: oneLine`
 				The argument must be the name/ID (partial or whole) of a command.
-				Only the bot owner may use this command.
+				Only the bot owner(s) may use this command.
 			`,
-			examples: ['reload some-command'],
+			examples: ['unload some-command'],
 			guarded: true,
 
 			args: [
@@ -35,12 +35,12 @@ module.exports = class UnloadCommandCommand extends Command {
 	}
 
 	hasPermission(msg) {
-		return msg.author.id === this.client.options.owner;
+		return this.client.isOwner(msg.author);
 	}
 
 	async run(msg, args) {
 		args.command.unload();
-		msg.reply(`Unloaded \`${args.command.name}\` command.`);
+		await msg.reply(`Unloaded \`${args.command.name}\` command.`);
 		return null;
 	}
 };
