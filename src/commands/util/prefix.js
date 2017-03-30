@@ -42,11 +42,19 @@ module.exports = class PrefixCommand extends Command {
 		// Check the user's permission before changing anything
 		if(msg.guild) {
 <<<<<<< HEAD
+<<<<<<< HEAD
 			if(!msg.member.hasPermission('ADMINISTRATOR') && msg.author.id !== this.client.options.owner) {
 				return msg.reply('Only administrators may change the command prefix.').then(a=>a.delete(8000));
 			}
 		} else if(msg.author.id !== this.client.options.owner) {
 			return msg.reply('Only the bot owner may change the global command prefix.').then(a=>a.delete(8000));
+=======
+			if(!msg.member.hasPermission('ADMINISTRATOR') && !this.client.isOwner(msg.author)) {
+				return msg.reply('Only administrators may change the command prefix.');
+			}
+		} else if(!this.client.isOwner(msg.author)) {
+			return msg.reply('Only the bot owner(s) may change the global command prefix.');
+>>>>>>> refs/remotes/Gawdl3y/master
 =======
 			if(!msg.member.hasPermission('ADMINISTRATOR') && !this.client.isOwner(msg.author)) {
 				return msg.reply('Only administrators may change the command prefix.');
@@ -70,7 +78,11 @@ module.exports = class PrefixCommand extends Command {
 		}
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 		msg.reply(`${response} To run commands, use ${msg.anyUsage('command')}.`).then(a=>a.delete(8000))
+=======
+		await msg.reply(`${response} To run commands, use ${msg.anyUsage('command')}.`);
+>>>>>>> refs/remotes/Gawdl3y/master
 =======
 		await msg.reply(`${response} To run commands, use ${msg.anyUsage('command')}.`);
 >>>>>>> refs/remotes/Gawdl3y/master

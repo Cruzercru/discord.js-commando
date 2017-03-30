@@ -134,6 +134,7 @@ class CommandMessage {
 		if(!this.command.hasPermission(this)) {
 			this.client.emit('commandBlocked', this, 'permission');
 <<<<<<< HEAD
+<<<<<<< HEAD
 			return await this.reply(`You do not have permission to use the \`${this.command.name}\` command.`).then(a=>a.delete(8000));
 		}
 
@@ -152,6 +153,12 @@ class CommandMessage {
 		}
 
 		// Throttle the command
+=======
+			return this.reply(`You do not have permission to use the \`${this.command.name}\` command.`);
+		}
+
+		// Throttle the command
+>>>>>>> refs/remotes/Gawdl3y/master
 		const throttle = this.command.throttle(this.message.author.id);
 		if(throttle && throttle.usages + 1 > this.command.throttling.usages) {
 			const remaining = (throttle.start + (this.command.throttling.duration * 1000) - Date.now()) / 1000;
@@ -159,6 +166,9 @@ class CommandMessage {
 			return this.reply(
 				`You may not use the \`${this.command.name}\` command again for another ${remaining.toFixed(1)} seconds.`
 			);
+<<<<<<< HEAD
+>>>>>>> refs/remotes/Gawdl3y/master
+=======
 >>>>>>> refs/remotes/Gawdl3y/master
 		}
 
